@@ -1,14 +1,21 @@
 {
     "name": "firework/cart",
-    "description": "",
+    "description": "Work with shopping carts with a dead simple API, Firework Cart is also very extensible.",
+    "keywords": ["shopping", "cart", "laravel"],
+    "license": "MIT",
     "authors": [
         {
             "name": "Douglas da Costa Antonio",
             "email": "douglas.costa.antonio@gmail.com"
+        },
+        {
+            "name": "Daniel Polito",
+            "email": "contato@dbpolito.net"
         }
     ],
     "require": {
         "php": ">=5.3.0",
+        "illuminate/config": "4.0.x",
         "illuminate/session": "4.0.x",
         "illuminate/support": "4.0.x"
     },
