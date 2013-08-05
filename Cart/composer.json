@@ -1,0 +1,21 @@
+{
+    "name": "firework/cart",
+    "description": "",
+    "authors": [
+        {
+            "name": "Douglas da Costa Antonio",
+            "email": "douglas.costa.antonio@gmail.com"
+        }
+    ],
+    "require": {
+        "php": ">=5.3.0",
+        "illuminate/session": "4.0.x",
+        "illuminate/support": "4.0.x"
+    },
+    "autoload": {
+        "psr-0": {
+            "Firework\\Cart": "src/"
+        }
+    },
+    "minimum-stability": "dev"
+}
