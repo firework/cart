@@ -6,29 +6,16 @@ use Illuminate\Support\Contracts\ArrayableInterface;
 
 class Option implements ArrayAccess, ArrayableInterface, JsonableInterface{
 
-	private $item;
-
 	protected $attributes = array();
 
-	public function __construct(Item &$item)
-	{
-		// Set item object so we can keep track
-		$this->setItem($item);
-	}
-
-	public function getItem()
-	{
-		return $this->item;
-	}
-
-	public function setItem(Item $item)
-	{
-		$this->item = $item;
-	}
+	protected $requiredAttributes = array(
+		'name',
+		'value',
+	);
 
 	public function fill(array $attributes)
 	{
-		if ($this->validate() === false)
+		if ($this->validate($attributes) === false)
 		{
 			throw new \Exception('Baaaaaaaahhhh, something wrong');
 		}
@@ -41,9 +28,17 @@ class Option implements ArrayAccess, ArrayableInterface, JsonableInterface{
 		return $this;
 	}
 
-	public function validate()
+	public function validate(array $attributes)
 	{
-		return true; // @TODO make it work
+		foreach ($this->requiredAttributes as $attribute)
+		{
+			if (empty($attributes[$attribute]))
+			{
+				return false;
+			}
+		}
+
+		return true;
 	}
 
 	/**
@@ -82,7 +77,7 @@ class Option implements ArrayAccess, ArrayableInterface, JsonableInterface{
 			return $this->$methodName();
 		}
 
-		return $this->attributes[$key];
+		return isset($this->attributes[$key]) ? $this->attributes[$key] : null;
 	}
 
 	/**
@@ -161,5 +156,4 @@ class Option implements ArrayAccess, ArrayableInterface, JsonableInterface{
 	{
 		return $this->attributes;
 	}
-
 }

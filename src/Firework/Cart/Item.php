@@ -8,40 +8,81 @@ use Illuminate\Support\Collection;
 
 class Item implements ArrayAccess, ArrayableInterface, JsonableInterface {
 
-	private $cart;
-
 	protected $attributes = array();
 
 	protected $requiredAttributes = array(
+		'id',
 		'name',
 		'qty',
 		'price',
-		'rowId'
 	);
 
-	public function __construct(Cart $cart)
+	public function fill(array $_attributes)
 	{
-		// Set cart object so we can keep track
-		$this->setCart($cart);
+		if ($this->validate($_attributes) === false)
+		{
+			throw new \Exception('Baaaaaaaahhhh, something wrong');
+		}
+
+		$attributes['options'] = new Collection;
+
+		foreach ($_attributes as $key => $value)
+		{
+			$this->$key = $value;
+		}
+
+		return $this;
 	}
 
-	public function getCart()
+	public function validate(array $attributes)
 	{
-		return $this->cart;
+		foreach ($this->requiredAttributes as $attribute)
+		{
+			if (empty($attributes[$attribute]))
+			{
+				return false;
+			}
+		}
+
+		return true;
 	}
 
-	public function setCart(Cart $cart)
+	public function calculatePrice()
 	{
-		$this->cart = $cart;
+		$total = (float) $this->price * (float) $this->qty;
+
+		if ( ! empty($this->discount))
+		{
+			$total -= $this->calculatePercentualOrFixed($this->discount);
+		}
+
+		if ( ! empty($this->tax))
+		{
+			$total += $this->calculatePercentualOrFixed($this->tax);
+		}
+
+		return $total;
+	}
+
+	public function calculatePercentualOrFixed($value)
+	{
+		if (ends_with($value, '%'))
+		{
+			return $this->calculatePercentual($value);
+		}
+
+		return (float) $value;
+	}
+
+	protected function calculatePercentual($percent)
+	{
+		$percent = (float) substr($percent, 0, -1);
+
+		return $this->price / 100 * $percent;
 	}
 
 	public function setOptions(array $options)
 	{
-		if ( ! isset($this->attributes['options']))
-		{
-			$this->attributes['options'] = new Collection;
-		}
-
 		foreach ($options as $option)
 		{
 			$this->setOption($option);
@@ -55,69 +96,19 @@ class Item implements ArrayAccess, ArrayableInterface, JsonableInterface {
 	 */
 	public function setOption(array $attributes)
 	{
-		$_option = with(new Option($this))->fill($attributes);
+		if ( ! isset($this->options))
+		{
+			$this->attributes['options'] = new Collection;
+		}
+
+		$_option = with(new Option)->fill($attributes);
 
 		$this->options->put($_option->name, $_option);
 	}
 
-	/**
-	 * Get options from iten.
-	 *
-	 * @return mixed
-	 */
-	public function getOptions()
+	public function hasOptions()
 	{
-		return isset($this->attributes['options']) ? $this->attributes['options'] : new Collection;
-	}
-
-	/**
-	 * Get price from iten.
-	 *
-	 * @return float
-	 */
-	public function getPrice()
-	{
-		return $this->attributes['price'];
-	}
-
-	/**
-	 * Get quantity.
-	 *
-	 * @return int
-	 */
-	public function getQty()
-	{
-		return $this->attributes['qty'];
-	}
-
-	/**
-	 * Get Name.
-	 *
-	 * @return string
-	 */
-	public function getName()
-	{
-		return $this->attributes['name'];
-	}
-
-	public function fill(array $attributes)
-	{
-		if ($this->validate() === false)
-		{
-			throw new \Exception('Baaaaaaaahhhh, something wrong');
-		}
-
-		foreach ($attributes as $key => $value)
-		{
-			$this->$key = $value;
-		}
-
-		return $this;
-	}
-
-	public function validate()
-	{
-		return true; // @TODO make it work
+		return isset($this->options) and ! $this->options->isEmpty();
 	}
 
 	/**
@@ -156,7 +147,7 @@ class Item implements ArrayAccess, ArrayableInterface, JsonableInterface {
 			return $this->$methodName();
 		}
 
-		return $this->attributes[$key];
+		return isset($this->attributes[$key]) ? $this->attributes[$key] : null;
 	}
 
 	/**
@@ -234,8 +225,11 @@ class Item implements ArrayAccess, ArrayableInterface, JsonableInterface {
 	public function toArray()
 	{
 		$attributes = $this->attributes;
-		
-		$attributes['options'] = $this->attributes['options']->toArray();
+
+		if (isset($this->options))
+		{
+			$attributes['options'] = $this->options->toArray();
+		}
 
 		return $attributes;
 	}

@@ -6,28 +6,38 @@ use Illuminate\Config\Repository;
 
 class Cart {
 
-	protected $sessionKey;
-
-	protected $items;
 	protected $config;
 
 	protected $session;
 
+	protected $sessionKey;
+
 	protected $autoSave = false;
+
+	protected $items;
+
+	protected $discount = 0;
+
+	protected $tax = 0;
 
 	public function __construct(Store $session, Repository $config)
 	{
-		$this->config = $config;
-		$this->session = $session;
+		$this->config     = $config;
+		$this->session    = $session;
+		$this->sessionKey = $this->config->get('cart::sessionKey');
+
+		$_session = $this->session->get($this->sessionKey);
+
+		$this->discount = $_session['discount'];
 
 		// Make items a collection
 		$this->items = new Collection;
 
 		// Get items from session
-		if ($items = $this->session->get($this->config->get('cart::sessionKey')))
+		if ($items = $_session['items'])
 		{
 			// Set items
-			$this->setItems($items);
+			$this->add($items);
 		}
 
 		// After construct, we can make it autosave
@@ -37,49 +47,97 @@ class Cart {
 	/**
 	 * Add Item to Cart.
 	 *
-	 * @param  mixed  $item
-	 * @param  bool   $save
-	 * @return mixed
+	 * @param  mixed  $items Array of items, attributes of a item or a Item object
+	 *
+	 * @return \Firework\Cart
 	 */
-	public function add(array $attributes)
+	public function add($items)
 	{
-		if( empty($attributes['rowId']))
+
+
+		// Array of items
+		if (is_array($items) and (is_array(current($items)) or current($items) instanceof Item))
 		{
-			$attributes['rowId'] = $this->createRowId($attributes['id']);
+			foreach ($items as $item)
+			{
+				$this->add($item);
+			}
+		}
+		// An Item instance
+		elseif ($items instanceof Item)
+		{
+			if ($this->items->has($items->rowId))
+			{
+				throw new \Exception('This item already exists, dumbass');
+			}
+
+			$this->items->put($items->rowId, $item);
+		}
+		// An array of attributes
+		else
+		{
+			if(empty($items['rowId']))
+			{
+				$items['rowId'] = $this->createRowId();
+			}
+			elseif ($this->items->has($items['rowId']))
+			{
+				throw new \Exception('This item already exists, dumbass');
+			}
+
+			$item = with(new Item)->fill($items);
+
+
+			$this->items->put($item->rowId, $item);
 		}
 
-		if ($this->items->has($attributes['rowId']))
-		{
-			throw new \Exception('This item already exists, dumbass');
-		}
-
-		$item = with(new Item($this))->fill($attributes);
-
-		$this->items->put($item->rowId, $item);
-
-		if ($this->isAutoSave() === true)
-		{
-			$this->save();
-		}
+		// Save it
+		$this->autoSave();
 
 		return $this;
 	}
 
-	public function update($rowId, array $attributes)
+	/**
+	 * Update items cart.
+	 *
+	 * @param  mixed  $items Array of items, attributes of a item or a Item object
+	 *
+	 * @return \Firework\Cart
+	 */
+	public function update($items)
 	{
-		if ($item = $this->items->get($rowId))
-		{
-			$item->fill($attributes);
 
-			if ($this->isAutoSave() === true)
+		// Array of items
+		if (is_array($items) and (is_array(current($items)) or current($items) instanceof Item))
+		{
+			foreach ($items as $item)
 			{
-				$this->save();
+				$this->update($item);
 			}
 		}
+		// An Item instance
+		elseif ($items instanceof Item)
+		{
+			if ( ! $this->items->has($items->rowId))
+			{
+				throw new \Exception('This item already exists, dumbass');
+			}
+
+			$this->items->put($items->rowId, $items);
+		}
+		// An array of attributes
 		else
 		{
-			throw new \Exception('Baaaaaaaahhhh, something wrong');
+			if (empty($items['rowId']) or ! $this->items->has($items['rowId']))
+			{
+				throw new \Exception('Baaaaaaaahhhh, something wrong');
+			}
+
+			$this->items->get($items['rowId'])->fill($items);
 		}
+
+		// Save it
+		$this->autoSave();
 
 		return $this;
 	}
@@ -90,9 +148,38 @@ class Cart {
 	 * @param  string $id
 	 * @return bool
 	 */
-	public function remove($id)
+	public function remove($items)
 	{
-		$this->items->forget($id);
+		// Array of items
+		if (isset($items[0]))
+		{
+			foreach ($items as $item)
+			{
+				$this->remove($item);
+			}
+		}
+		// An instance of Item or array of attributes or rowId
+		else
+		{
+			if ($items instanceof Item)
+			{
+				$rowId = $items->rowId;
+			}
+			else
+			{
+				$rowId = ! empty($items['rowId']) ? $items['rowId'] : $items;
+			}
+
+			if ( ! $this->items->has($rowId))
+			{
+				throw new \Exception('Item not found.');
+			}
+
+			$this->items->forget($rowId);
+		}
+
+		// Save it
+		$this->autoSave();
 
 		return $this;
 	}
@@ -103,9 +190,14 @@ class Cart {
 	 * @param  int  $id
 	 * @return string
 	 */
-	public function createRowId($id)
+	protected function createRowId()
 	{
 		return md5(uniqid(rand(), true));
+	}
+
+	public function hasItems()
+	{
+		return ! $this->items->isEmpty();
 	}
 
 	/**
@@ -113,39 +205,29 @@ class Cart {
 	 *
 	 * @return mixed
 	 */
-	public function getItems()
+	public function items()
 	{
+		//exit();
 		return $this->items;
 	}
 
-	public function setItems(array $items)
-	{
-		foreach ($items as $item)
-		{
-			$this->add($item);
-		}
-	}
-
 	/**
 	 * Get specific item from cart.
 	 *
 	 * @param  string $id
 	 * @return mixed
 	 */
-	public function getItem($id)
-	{	
+	public function item($id)
+	{
 		return $this->items->get($id);
 	}
 
-	/**
-	 * Get specific item from cart.
-	 *
-	 * @param  string $id
-	 * @return mixed
-	 */
-	public function setItem(array $attributes)
+	protected function autoSave()
 	{
-		return $this->add($attributes);
+		if ($this->isAutoSave() === true)
+		{
+			$this->save();
+		}
 	}
 
 	/**
@@ -155,12 +237,21 @@ class Cart {
 	 */
 	public function save()
 	{
-		$this->session->put($this->config->get('cart::sessionKey'), $this->items->toArray());
+		$this->session->put($this->sessionKey, $this->toArray());
 
 		return true;
 	}
 
+	/**
+	 * Clear the cart.
+	 *
+	 */
+	public function destroy()
+	{
+		$this->session->forget($this->sessionKey);
 
+		return $this;
+	}
 
 	/**
 	 * Set auto save.
@@ -181,18 +272,24 @@ class Cart {
 	 */
 	public function isAutoSave()
 	{
-		return $this->config->get('cart::autoSave');
+		return $this->autoSave;
 	}
 
-	/**
-	 * Clear the cart.
-	 *
-	 */
-	public function clearAll()
+	public function totalPrice($withDiscount = true)
 	{
-		$this->session->forget($this->config->get('cart::sessionKey'));
+		$total = 0;
 
-		return $this;
+		foreach($this->items() as $item)
+		{
+			$total += $item->calculatePrice();
+		}
+
+		if ($this->discount and $withDiscount)
+		{
+			$total = $total - $this->discount;
+		}
+
+		return $total;
 	}
 
 	/**
@@ -200,16 +297,40 @@ class Cart {
 	 *
 	 * @return float
 	 */
-	public function totalPrice()
+	public function total()
 	{
-		$total = 0;
+		$total = $this->totalPrice();
 
-		foreach($this->getItems() as $item)
+		// Calculate discount if exists
+		if ($this->discount != 0)
 		{
-			$total += $item->price;
+			$total -= $this->calculatePercentualOrFixed($this->discount);
+		}
+
+		// Calculate the tax if exists
+		if ($this->tax != 0)
+		{
+			$total += $this->calculatePercentualOrFixed($this->tax);
 		}
 
 		return $total;
+	}
+
+	public function calculatePercentualOrFixed($value)
+	{
+		if (ends_with($value, '%'))
+		{
+			return $this->calculatePercentual($value);
+		}
+
+		return (float) $value;
+	}
+
+	protected function calculatePercentual($percent)
+	{
+		$percent = (float) substr($percent, 0, -1);
+
+		return $this->totalPrice() / 100 * $percent;
 	}
 
 	/**
@@ -221,7 +342,7 @@ class Cart {
 	{
 		$total = 0;
 
-		foreach($this->getItems() as $item)
+		foreach($this->items() as $item)
 		{
 			$total += $item->qty;
 		}
@@ -236,6 +357,33 @@ class Cart {
 	 */
 	public function __toString()
 	{
-		return $this->items->toJson();
+		return json_encode($this->toJson());
+	}
+
+	public function toArray()
+	{
+		return array(
+			'discount' => $this->discount,
+			'tax'      => $this->tax,
+			'items'    => $this->items->toArray(),
+		);
+	}
+
+	public function toJson()
+	{
+		return json_encode($this->toArray());
+	}
+
+	public function setDiscount($value)
+	{
+		$this->discount = (float) $value;
+
+		// Save it
+		$this->autoSave();
+	}
+
+	public function discount()
+	{
+		return $this->discount;
 	}
 }
